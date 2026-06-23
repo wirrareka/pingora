@@ -173,7 +173,34 @@ fn apply_tcp_socket_options(sock: &TcpSocket, opt: Option<&TcpSocketOptions>) ->
             .or_err(BindError, "failed to set IPV6_V6ONLY")?;
     }
 
-    #[cfg(unix)]
+    // SO_REUSEPORT load-balancing differs by platform. On Linux, SO_REUSEPORT
+    // 4-tuple-hashes incoming connections across the bound socket group — what a
+    // thread-per-core / per-listener model needs. On FreeBSD the legacy
+    // SO_REUSEPORT does NOT load-balance a TCP group (it strands listeners,
+    // leaving cores idle); SO_REUSEPORT_LB (FreeBSD 12+) is the load-balancing
+    // variant. The two are mutually exclusive, so pick the right one per OS.
+    #[cfg(all(unix, target_os = "freebsd"))]
+    if let Some(reuseport) = opt.so_reuseport {
+        if reuseport {
+            // SO_REUSEPORT_LB = 0x00010000 (FreeBSD <sys/socket.h>); hardcoded
+            // because libc 0.2.70 predates the named constant.
+            let one: libc::c_int = 1;
+            let ret = unsafe {
+                libc::setsockopt(
+                    sock.as_raw_fd(),
+                    libc::SOL_SOCKET,
+                    0x0001_0000,
+                    &one as *const libc::c_int as *const libc::c_void,
+                    std::mem::size_of::<libc::c_int>() as libc::socklen_t,
+                )
+            };
+            if ret != 0 {
+                return Err(std::io::Error::last_os_error())
+                    .or_err(BindError, "failed to set SO_REUSEPORT_LB");
+            }
+        }
+    }
+    #[cfg(all(unix, not(target_os = "freebsd")))]
     if let Some(reuseport) = opt.so_reuseport {
         socket_ref
             .set_reuse_port(reuseport)
