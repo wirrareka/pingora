@@ -135,8 +135,30 @@ impl HttpSession {
     pub async fn read_request(&mut self) -> Result<Option<usize>> {
         const MAX_ERR_BUF_LEN: usize = 2048;
 
-        self.buf.clear();
-        let mut buf = BytesMut::with_capacity(INIT_HEADER_BUF_SIZE);
+        // kalista perf (Opt-2): reuse the previous request's header-read allocation on a
+        // keep-alive connection instead of allocating a fresh `BytesMut` every request.
+        // `self.buf` holds the prior request's parsed header bytes as `Bytes`; the parsed
+        // `RequestHeader`/body slices alias it for the request's lifetime. `try_into_mut`
+        // hands back the owning `BytesMut` (zero-copy) ONLY when that allocation is unique
+        // — i.e. the prior request is fully done and nothing still aliases it — so the
+        // zero-copy/overread model is preserved by construction. When still aliased it
+        // returns the `Bytes` unchanged and we fall back to a fresh allocation. `clear()`
+        // resets length to 0 while keeping capacity, so the reused buffer reads into the
+        // same backing storage. (`std::mem::take` leaves `self.buf` as an empty `Bytes`.)
+        // Drop the prior request's parsed header FIRST: its zero-copy header values alias
+        // `self.buf`, so without releasing it here `try_into_mut` always sees a shared
+        // allocation and falls back to a fresh alloc (the reclaim never fires). The prior
+        // request is fully done by the time we read the next; the new header is set below on
+        // success, and on a read error the connection is dropped (not reused).
+        self.request_header = None;
+        let mut buf = match std::mem::take(&mut self.buf).try_into_mut() {
+            Ok(mut reclaimed) => {
+                reclaimed.clear();
+                reclaimed.reserve(INIT_HEADER_BUF_SIZE);
+                reclaimed
+            }
+            Err(_) => BytesMut::with_capacity(INIT_HEADER_BUF_SIZE),
+        };
         let mut already_read: usize = 0;
         loop {
             if already_read > MAX_HEADER_SIZE {
@@ -1415,6 +1437,28 @@ mod tests_stream {
         assert_eq!(Version::HTTP_11, http_stream.req_header().version);
 
         assert_eq!(b"pingora.org", http_stream.get_header_bytes("Host"));
+    }
+
+    #[tokio::test]
+    async fn kalista_reuse_header_buf_across_keepalive() {
+        init_log();
+        let req1 = b"GET /1 HTTP/1.1\r\nHost: a\r\n\r\n";
+        let req2 = b"GET /2 HTTP/1.1\r\nHost: b\r\n\r\n";
+        let mock_io = Builder::new().read(&req1[..]).read(&req2[..]).build();
+        let mut http_stream = HttpSession::new(Box::new(mock_io));
+        http_stream.read_request().await.unwrap().unwrap();
+        assert_eq!(b"/1", http_stream.get_path());
+        let ptr1 = http_stream.buf.as_ptr();
+        // second keep-alive request: the prior request is fully done, so read_request drops
+        // its header and RECLAIMS req1's buffer (kalista perf Opt-2) — same allocation, no
+        // fresh alloc. A regression back to a per-request alloc fails this pointer check.
+        http_stream.read_request().await.unwrap().unwrap();
+        assert_eq!(b"/2", http_stream.get_path());
+        assert_eq!(
+            ptr1,
+            http_stream.buf.as_ptr(),
+            "req2 must reuse req1's header buffer allocation"
+        );
     }
 
     #[tokio::test]
