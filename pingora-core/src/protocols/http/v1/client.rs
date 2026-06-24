@@ -217,7 +217,16 @@ impl HttpSession {
     /// This function can be called multiple times, if the headers received are just informational
     /// headers.
     pub async fn read_response(&mut self) -> Result<usize> {
-        if self.preread_body.as_ref().is_none_or(|b| b.is_empty()) {
+        // kalista perf (Opt-2): in the branch that discards the previous `self.buf`
+        // (no preread body bytes pending), reclaim that allocation as the new header-read
+        // buffer instead of allocating a fresh `BytesMut` per response. `try_into_mut`
+        // only succeeds when the prior `Bytes` is unique (the prior response and its parsed
+        // `ResponseHeader` slices are fully done), so the zero-copy model is preserved by
+        // construction; otherwise it returns the `Bytes` and we allocate fresh. The
+        // non-clear branch (`preread_body` non-empty) is the overread/pipelining path where
+        // `self.buf` still holds already-read body bytes the next parse must consume, so it
+        // is left completely untouched, exactly as before.
+        let mut buf = if self.preread_body.as_ref().is_none_or(|b| b.is_empty()) {
             // preread_body is set after a completed valid response header is read
             // if called multiple times (i.e. after informational responses),
             // we want to parse the already read buffer bytes as more headers.
@@ -226,9 +235,23 @@ impl HttpSession {
             // it cannot contain content or trailers.")
             // If this next read_response call completes successfully,
             // self.buf will be reset to the last response + any body.
-            self.buf.clear();
-        }
-        let mut buf = BytesMut::with_capacity(INIT_HEADER_BUF_SIZE);
+            // Drop the prior response's parsed header FIRST so its zero-copy values stop
+            // aliasing `self.buf` — otherwise the reclaim below always falls back to a fresh
+            // alloc. Only reached in the new-response branch (the prior complete response is
+            // done); `raw_header` is offset-based and reset on the next parse, so the reused
+            // buffer is safe.
+            self.response_header = None;
+            match std::mem::take(&mut self.buf).try_into_mut() {
+                Ok(mut reclaimed) => {
+                    reclaimed.clear();
+                    reclaimed.reserve(INIT_HEADER_BUF_SIZE);
+                    reclaimed
+                }
+                Err(_) => BytesMut::with_capacity(INIT_HEADER_BUF_SIZE),
+            }
+        } else {
+            BytesMut::with_capacity(INIT_HEADER_BUF_SIZE)
+        };
         let mut already_read: usize = 0;
         loop {
             if already_read > MAX_HEADER_SIZE {
