@@ -226,7 +226,17 @@ impl HttpSession {
                         // while header_refs doesn't as it is still empty
                         let _num_headers = populate_headers(base, &mut header_refs, req.headers);
 
-                        let mut request_header = Box::new(RequestHeader::build(
+                        // kalista perf (Opt-1): build the parsed downstream request with NO
+                        // case map. A reverse proxy does not need original-case passthrough
+                        // (HTTP/1.1 header names are case-insensitive; we re-emit canonical
+                        // Titled-case on the wire, like nginx). `build_no_case` leaves
+                        // `header_name_map == None`, which (a) skips the per-header
+                        // `CaseHeaderName` Bytes::copy + `name_map.insert(clone)` below in
+                        // `append_header`, (b) avoids allocating the CaseMap itself, and
+                        // (c) makes the per-request `req_header().clone()` in proxy_h1 cheaper
+                        // (no map to clone). The wire output stays valid HTTP via the Titled
+                        // fallback in `header_to_h1_wire`.
+                        let mut request_header = Box::new(RequestHeader::build_no_case(
                             req.method.unwrap_or(""),
                             // we path httparse to allow unsafe bytes in the str
                             req.path.unwrap_or("").as_bytes(),

@@ -301,7 +301,15 @@ impl HttpSession {
                     // while header_refs doesn't as it is still empty
                     let _num_headers = populate_headers(base, &mut header_refs, resp.headers);
 
-                    let mut response_header = Box::new(ResponseHeader::build(
+                    // kalista perf (Opt-1): build the parsed upstream response with NO case
+                    // map (mirrors the request side in v1/server.rs). The proxy re-emits
+                    // canonical Titled-case to the downstream client, so original-case
+                    // passthrough is unnecessary. `build_no_case` leaves
+                    // `header_name_map == None`, skipping the per-header `CaseHeaderName`
+                    // Bytes::copy + `name_map.insert(clone)` in `append_header` below and the
+                    // CaseMap allocation. Wire output stays valid HTTP via the Titled
+                    // fallback in `header_to_h1_wire`.
+                    let mut response_header = Box::new(ResponseHeader::build_no_case(
                         resp.code.unwrap(),
                         Some(resp.headers.len()),
                     )?);
