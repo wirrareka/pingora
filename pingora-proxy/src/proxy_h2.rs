@@ -531,6 +531,28 @@ where
             }
         }
 
+        // If the full response has been sent to the client but the client is
+        // still uploading its request body — the upstream returned an early
+        // response (401 auth challenge, redirect, 413) before reading the body,
+        // or the proxy short-circuited — drain the remaining request body
+        // (bounded) so the client can finish writing and actually READ the
+        // response. Without this, finishing/closing now resets the client
+        // mid-upload and it never sees the status.
+        if !downstream_state.is_errored() && !session.as_mut().is_body_done() {
+            match session
+                .as_mut()
+                .drain_request_body_bounded(crate::EARLY_RESPONSE_BODY_DRAIN_LIMIT)
+                .await
+            {
+                Ok(true) => debug!("drained request body after early response"),
+                Ok(false) | Err(_) => {
+                    // Couldn't fully drain within the bound: don't reuse a
+                    // connection that still has a partial request body queued.
+                    downstream_state.to_errored();
+                }
+            }
+        }
+
         let mut reuse_downstream = !downstream_state.is_errored();
         if reuse_downstream {
             match session.as_mut().finish_body().await {
