@@ -155,6 +155,24 @@ impl Session {
         }
     }
 
+    /// Discard up to `limit` bytes of the request body by reading it.
+    ///
+    /// Like [`Self::drain_request_body`] but bounded: returns `Ok(true)` if the
+    /// entire body was drained within `limit`, or `Ok(false)` if the body
+    /// exceeds `limit` (draining stops early, so the stream is NOT safe to
+    /// reuse). Used to deliver an early response cleanly without letting a
+    /// client force an unbounded read after the proxy has decided to respond.
+    pub async fn drain_request_body_bounded(&mut self, limit: usize) -> Result<bool> {
+        let mut drained: usize = 0;
+        while let Some(chunk) = self.read_request_body().await? {
+            drained = drained.saturating_add(chunk.len());
+            if drained > limit {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
     /// Write the response header to client
     /// Informational headers (status code 100-199, excluding 101) can be written multiple times the final
     /// response header (status code 200+ or 101) is written.

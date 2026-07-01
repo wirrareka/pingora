@@ -78,6 +78,17 @@ use pingora_error::{Error, ErrorSource, ErrorType::*, OrErr, Result};
 
 const TASK_BUFFER_SIZE: usize = 4;
 
+/// When the upstream (or the proxy itself) sends a final response *before* the
+/// client has finished uploading its request body — e.g. an early `401` auth
+/// challenge, a redirect, or a `413` — the proxy drains up to this many bytes
+/// of the remaining request body before finishing. Draining lets the client
+/// finish writing and actually READ the response instead of getting a
+/// mid-upload connection reset ("Broken pipe"). Bodies larger than this bound
+/// fall back to the previous behaviour (close/reset), bounding the work a
+/// client can force after we have already decided to respond. Sized above the
+/// typical request-body cap so ordinary uploads drain fully.
+pub(crate) const EARLY_RESPONSE_BODY_DRAIN_LIMIT: usize = 32 * 1024 * 1024;
+
 mod proxy_cache;
 mod proxy_common;
 mod proxy_custom;
