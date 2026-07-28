@@ -107,3 +107,8 @@ openssl_derived = ["any_tls"]
 any_tls = []
 sentry = ["dep:sentry"]
 connection_filter = []
+# Passive Akamai-style HTTP/2 client fingerprinting, published on
+# `Digest::h2_digest`. Default off: with the feature disabled the sniffer module
+# is not compiled and the downstream stream is not wrapped, so the HTTP/2 path is
+# identical to a build without it.
+h2-fingerprint = []

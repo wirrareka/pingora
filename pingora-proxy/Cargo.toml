@@ -70,6 +70,7 @@ openssl_derived = ["any_tls"]
 any_tls = []
 sentry = ["pingora-core/sentry"]
 connection_filter = ["pingora-core/connection_filter"]
+h2-fingerprint = ["pingora-core/h2-fingerprint"]
 
 [[example]]
 name = "connection_filter"

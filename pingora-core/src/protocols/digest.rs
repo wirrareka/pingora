@@ -35,6 +35,18 @@ pub struct Digest {
     pub proxy_digest: Option<Arc<ProxyDigest>>,
     /// Information about underlying socket/fd of this connection
     pub socket_digest: Option<Arc<SocketDigest>>,
+    /// Passive HTTP/2 client fingerprint (Akamai-style
+    /// `S[..]|WU[..]|P[..]|PS[..]`) of this connection, if it is HTTP/2 and the
+    /// `h2-fingerprint` feature is enabled.
+    ///
+    /// The cell is filled at most once, from the connection preamble, before the
+    /// first request is dispatched; see
+    /// [`crate::protocols::http::v2::fingerprint`]. It stays empty when the
+    /// preamble could not be parsed with certainty (fail-open), and the whole
+    /// field is `None` when the feature is off — the type is deliberately a
+    /// plain `String` rather than a feature-gated newtype so that this struct,
+    /// which is constructed unconditionally, needs no `cfg` on its fields.
+    pub h2_digest: Option<Arc<OnceCell<String>>>,
 }
 
 /// The interface to return protocol related information
