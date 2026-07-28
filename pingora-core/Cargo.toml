@@ -112,3 +112,12 @@ connection_filter = []
 # is not compiled and the downstream stream is not wrapped, so the HTTP/2 path is
 # identical to a build without it.
 h2-fingerprint = []
+
+# Tool-corpus validation harness for `h2-fingerprint`: a loopback-only HTTPS/h2c
+# listener that prints the fingerprint each connecting client produces, so the
+# emitted strings can be checked against a WAF's tool corpus (see the example's
+# module docs). Requires a TLS backend for the ALPN path, hence the explicit
+# required-features — without them `cargo build --examples` skips it.
+[[example]]
+name = "h2fp_probe"
+required-features = ["openssl", "h2-fingerprint"]
