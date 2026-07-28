@@ -445,6 +445,8 @@ pub async fn handshake(
         timing_digest: stream.get_timing_digest(),
         proxy_digest: stream.get_proxy_digest(),
         socket_digest: stream.get_socket_digest(),
+        // upstream connection: client-side fingerprinting does not apply
+        h2_digest: None,
     };
     // TODO: make these configurable
     let (send_req, connection) = Builder::new()

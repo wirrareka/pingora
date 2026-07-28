@@ -23,6 +23,10 @@ use bytes::Bytes;
 use h2::SendStream;
 
 pub mod client;
+/// Passive HTTP/2 client fingerprinting (Akamai-style). Compiled only with the
+/// default-off `h2-fingerprint` feature, so a build without it is unchanged.
+#[cfg(feature = "h2-fingerprint")]
+pub mod fingerprint;
 pub mod server;
 
 async fn reserve_and_send(

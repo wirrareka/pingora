@@ -74,6 +74,7 @@ any_tls = []
 sentry = ["pingora-core/sentry"]
 patched_http1 = ["pingora-core/patched_http1"]
 connection_filter = ["pingora-core/connection_filter"]
+h2-fingerprint = ["pingora-core/h2-fingerprint"]
 
 [[example]]
 name = "connection_filter"

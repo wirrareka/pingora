@@ -212,6 +212,17 @@ where
             }
         }
         if h2c || matches!(stream.selected_alpn_proto(), Some(ALPN::H2)) {
+            // Passively fingerprint the client's HTTP/2 preamble (SETTINGS,
+            // WINDOW_UPDATE, PRIORITY, pseudo-header order). The wrapper must sit
+            // between the transport and `server::handshake` because `h2` discards
+            // all of it while decoding. It is read-only and bounded; see
+            // `protocols::http::v2::fingerprint`. Without the feature the stream
+            // is handed to `server::handshake` exactly as before.
+            #[cfg(feature = "h2-fingerprint")]
+            let (stream, h2_digest) = crate::protocols::http::v2::fingerprint::wrap(stream);
+            #[cfg(not(feature = "h2-fingerprint"))]
+            let h2_digest = None;
+
             // create a shared connection digest
             let digest = Arc::new(Digest {
                 ssl_digest: stream.get_ssl_digest(),
@@ -219,6 +230,7 @@ where
                 timing_digest: stream.get_timing_digest(),
                 proxy_digest: stream.get_proxy_digest(),
                 socket_digest: stream.get_socket_digest(),
+                h2_digest,
             });
 
             let h2_options = self.h2_options();

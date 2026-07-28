@@ -77,6 +77,8 @@ impl HttpSession {
             timing_digest: stream.get_timing_digest(),
             proxy_digest: stream.get_proxy_digest(),
             socket_digest: stream.get_socket_digest(),
+            // HTTP/1: no HTTP/2 fingerprint
+            h2_digest: None,
         });
         HttpSession {
             underlying_stream: stream,

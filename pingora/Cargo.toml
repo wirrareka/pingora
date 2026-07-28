@@ -134,6 +134,12 @@ connection_filter = [
     "pingora-proxy?/connection_filter",
 ]
 
+## Enable passive Akamai-style HTTP/2 client fingerprinting on `Digest`
+h2-fingerprint = [
+    "pingora-core/h2-fingerprint",
+    "pingora-proxy?/h2-fingerprint",
+]
+
 
 # These features are intentionally not documented
 openssl_derived = ["any_tls"]
