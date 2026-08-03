@@ -73,6 +73,11 @@ x509-parser = { version = "0.16.0", optional = true }
 ouroboros = { version = "0.18.4", optional = true }
 lru = { workspace = true, optional = true }
 daggy = "0.8"
+# kalista fork: downstream handshake-failure counters. The `metrics` facade is
+# a no-op unless the embedding process installs a recorder (kalista does);
+# version must stay in lockstep with kalista's `metrics` so both talk to the
+# same global recorder.
+metrics = "0.23"
 
 [target.'cfg(unix)'.dependencies]
 daemonize = "0.5.0"

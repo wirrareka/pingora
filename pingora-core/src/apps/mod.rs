@@ -237,7 +237,16 @@ where
             let h2_conn = server::handshake(stream, h2_options).await;
             let mut h2_conn = match h2_conn {
                 Err(e) => {
-                    error!("H2 handshake error {e}");
+                    // kalista fork: failed H2 preface reads (scanner probes,
+                    // clients resetting mid-handshake) flood ERROR on a public
+                    // edge. Counted, logged at debug — see listening.rs for the
+                    // matching TLS-layer treatment.
+                    metrics::counter!(
+                        "kalista_downstream_handshake_failures_total",
+                        "cause" => "H2Handshake",
+                    )
+                    .increment(1);
+                    debug!("H2 handshake error {e}");
                     return None;
                 }
                 Ok(c) => c,
