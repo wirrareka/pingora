@@ -218,17 +218,31 @@ impl<A: ServerApp + Send + Sync + 'static> Service<A> {
                                 match handshake {
                                     Ok(io) => Self::handle_event(io, app, shutdown).await,
                                     Err(e) => {
-                                        // TODO: Maybe IOApp trait needs a fn to handle/filter out this error
+                                        // kalista fork: downstream handshake failures are
+                                        // dominated by internet background noise (TLS EOF /
+                                        // reset, bad preface) on a public edge — tens of
+                                        // thousands a day at ERROR bury real faults. Count
+                                        // them (cause = ErrorType) and log at debug.
+                                        metrics::counter!(
+                                            "kalista_downstream_handshake_failures_total",
+                                            "cause" => e.etype.as_str(),
+                                        )
+                                        .increment(1);
                                         if let Some(addr) = peer_addr {
-                                            error!("Downstream handshake error from {}: {e}", addr);
+                                            debug!("Downstream handshake error from {}: {e}", addr);
                                         } else {
-                                            error!("Downstream handshake error: {e}");
+                                            debug!("Downstream handshake error: {e}");
                                         }
                                     }
                                 }
                             }
                             Err(_) => {
-                                error!("Downstream handshake timeout");
+                                metrics::counter!(
+                                    "kalista_downstream_handshake_failures_total",
+                                    "cause" => "Timeout",
+                                )
+                                .increment(1);
+                                debug!("Downstream handshake timeout");
                             }
                         }
                     });
